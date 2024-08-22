@@ -121,6 +121,7 @@ def generate_data_yield_summary(cursor, device_no, INACTIVE, Cur_Date, cus_no):
             data_dict[hit_type].append(hitter_info)
 
     # for index in data_Hitter:
+    flag = 0
     for ele in data_Hitter:
         station = ele[-1]
         for index in data_INACTIVE:
@@ -322,7 +323,7 @@ def main():
     cnxn = pyodbc.connect("DRIVER={ODBC Driver 17 for SQL Server};SERVER=10.201.21.84,50150;DATABASE=MCSDB;UID=cimitar2;PWD=TFAtest1!2!")
     cursor = cnxn.cursor()
     device_no_list = ['639-18807', '639-18808', 'QM76300', 'QM76309', 'QM76095']
-    device_no_1 = ['QM76095']
+    device_no_1 = ['QM76300']
     INACTIVE = 'INACTIVE'
     ACTIVE = 'OTHERSTATUS'
     cus_no = '2277'
