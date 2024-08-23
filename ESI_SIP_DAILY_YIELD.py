@@ -14,7 +14,9 @@ datetime_str = str(datetime.now(Vietnam_time))
 year = datetime_str.split('-')[0]
 month = datetime_str.split('-')[1]
 date = datetime_str.split('-')[2][:2]
-Curr_Date = year+month+date
+date = str(int(date) - 1)
+# Cur_Date = year+month+date
+Cur_Date='20240823'
 
 def get_data_group(cursor, device_no, INACTIVE, Cur_Date):
     get_group_data = f"EXEC [GetGroupStationData] @Device_Type_No = '{device_no}', @Status = '{INACTIVE}', @CurrentDate = '{Cur_Date}'"
@@ -40,7 +42,6 @@ def generate_report_daily(cursor, device_no, INACTIVE, Cur_Date):
     data_INACTIVE = get_data_group(cursor, device_no, INACTIVE, Cur_Date)
     if data_INACTIVE == []:
         return 0
-
     data_dict = {}
     # print("INACTIVE")
     # for index in data_INACTIVE:
@@ -57,6 +58,14 @@ def generate_report_daily(cursor, device_no, INACTIVE, Cur_Date):
         rb = xlrd.open_workbook(r"C:\Workplace\Task\Support_Assy\Auto_Mail_Yield\sample_format\QORVO_Sample_input.xls", formatting_info=True)
         keys = ['2DSM', 'TOP SMT', 'TOP MOLD', 'BTM SMT', 'BTM MOLD', 'LASER', 'SMT Reball', 'PKG Saw', 'SPUTTER1', 'DMZ &FVI', 'SLT0', 'SLT1', 'SLT2', 'SLT3', 'AVI/TNR']
 
+    #Get Limit Table
+    sql_get_YLTB = f""" SELECT * FROM OPENQUERY([DATA400], 'SELECT YLYLIM FROM EMLIB.EMESTP04 
+                WHERE YLPKG = ''M6'' AND YLDMS = ''Z6'' AND YLLEAD = ''050'' AND YLBUSN = ''A'' ')"""
+    cursor.execute(sql_get_YLTB)
+    data_ylmit = cursor.fetchone()
+    yield_limit = str(data_ylmit[0])[:5] + '%'
+
+    #WorkBook
     wb = copy(rb)
     sheet = wb.get_sheet(0)
 
@@ -71,6 +80,10 @@ def generate_report_daily(cursor, device_no, INACTIVE, Cur_Date):
 
     sheet.write(1, 0, '2277', style)
     sheet.write(1, 1, device_no, style)
+    if keys[0] == 'SUB/L':
+        sheet.write(13, 2, yield_limit, style)
+    else:
+        sheet.write(12, 2, yield_limit, style)
     
     # Initialize the overall In and Out
     Overall_In = 0
@@ -80,9 +93,9 @@ def generate_report_daily(cursor, device_no, INACTIVE, Cur_Date):
     for row in range(3, len(keys) + 3):  # Rows 4 to 17 (0-indexed)
         key = keys[row - 3]
         if key in data_dict:
-            sheet.write(row, 8, data_dict[key]['Yield'], style)
-            sheet.write(row, 9, data_dict[key]['In'], style)
-            sheet.write(row, 10, data_dict[key]['Out'], style)
+            sheet.write(row, 4, data_dict[key]['Yield'], style)
+            sheet.write(row, 5, data_dict[key]['In'], style)
+            sheet.write(row, 6, data_dict[key]['Out'], style)
             Overall_In += data_dict[key]['In']
             Overall_Out += data_dict[key]['Out']
 
@@ -94,12 +107,13 @@ def generate_report_daily(cursor, device_no, INACTIVE, Cur_Date):
         Overall_Yield = str(Overall_Yield) + '%'
 
     # Write the overall yield, in and out
-    sheet.write(len(keys) + 4, 8, Overall_Yield, style)
-    sheet.write(len(keys) + 4, 9, Overall_In, style)
-    sheet.write(len(keys) + 4, 10, Overall_Out, style)
+    sheet.write(len(keys) + 4, 4, Overall_Yield, style)
+    sheet.write(len(keys) + 4, 5, Overall_In, style)
+    sheet.write(len(keys) + 4, 6, Overall_Out, style)
     fileName = f'{device_no}_{Cur_Date}_IO_DAILY_YIELD.xls'
+    fileFolder = 'exported'
     # Save the workbook
-    wb.save(fileName)
+    wb.save(f'{fileFolder}/{fileName}')
     print(f"Exported -> {fileName}")
     return fileName
 
@@ -288,25 +302,29 @@ def generate_yield_hitter_report(data_all, device_no, Cur_Date, cus_no):
 
     # Save the workbook
     fileName = f"{device_no}_{Cur_Date}_Yield_Hitter_Summary.xls"
-    wb.save(fileName)
+    fileFolder = 'exported'
+    wb.save(f"{fileFolder}/{fileName}")
     print(f"Exported -> {fileName}")
     return fileName
 
 def convert_file_to_base64(file_path):
+    file_path = f"exported/{file_path}"
     with open(file_path, "rb") as file:
         encoded_string = base64.b64encode(file.read())
     return encoded_string.decode('utf-8')
 
 def sending_email(list_attached):
-    toList = ['Hiep.Letien@amkor.com','Tuan.Vuongmanh@amkor.com']
-    ccList = ['Hoan.Nguyenvan@amkor.com']
+    # toList = ['ATVPE@mkor.onmicosoft.com']
+    toList = ['Khuong.Hoangminh@amkor.com']
+    bccList = ['Hiep.Letien@amkor.com']
     dictionary_email = {
-        "sender": "testit@amkor.com",
-        "subject": "test_email",
-        "body": "<h1>This is a test email</h1>",
+        "mailPriority": "NORMAL",
+        "sender": "summaryyield@amkor.com",
+        "subject": f"{Cur_Date}_ATV_VB11000_DAILY YIELD REPORT-YIELD HITTER SUMMARY REPORT",
+        "body": f"<h1>This is Summary Yield Report on {Cur_Date}</h1>",
         "toMailList": toList,
-        "ccMailList": ccList,
-        "bccMailList": [""],
+        "ccMailList": [""],
+        "bccMailList": bccList,
         "attachmentList": list_attached
     }
     request_API(dictionary_email)
@@ -320,16 +338,16 @@ def request_API(payload):
     print(response.text)
 
 def main():
+    #cnxn = pyodbc.connect("DRIVER=/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-18.3.so.2.1;UID=cimitar2;PWD=TFAtest1!2!;Database=MCSDB;Server=10.201.21.84,50150;TrustServerCertificate=yes;")
     cnxn = pyodbc.connect("DRIVER={ODBC Driver 17 for SQL Server};SERVER=10.201.21.84,50150;DATABASE=MCSDB;UID=cimitar2;PWD=TFAtest1!2!")
     cursor = cnxn.cursor()
     device_no_list = ['639-18807', '639-18808', 'QM76300', 'QM76309', 'QM76095']
-    device_no_1 = ['QM76300']
+    device_no_1 = ['639-18808']
     INACTIVE = 'INACTIVE'
     ACTIVE = 'OTHERSTATUS'
     cus_no = '2277'
-    Cur_Date='202408'
     list_attached = []
-    for device_no in device_no_1:
+    for device_no in device_no_list:
         report_daily = generate_report_daily(cursor, device_no, INACTIVE, Cur_Date)
         if report_daily != 0:
             data = generate_data_yield_summary(cursor, device_no, INACTIVE, Cur_Date, cus_no)
@@ -350,10 +368,9 @@ def main():
         else:
             print(f"Cannot generate report because {device_no} has no data on {Cur_Date}")
     cnxn.close()
-    # sending_email(list_attached)
+    sending_email(list_attached)
     
 if __name__ == '__main__':
-
     main()
 
 
