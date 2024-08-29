@@ -15,11 +15,12 @@ year = datetime_str.split('-')[0]
 month = datetime_str.split('-')[1]
 date = datetime_str.split('-')[2][:2]
 date = str(int(date) - 1)
-# Cur_Date = year+month+date
-Cur_Date='20240823'
+Cur_Date = year+month+date
 
-def get_data_group(cursor, device_no, INACTIVE, Cur_Date):
-    get_group_data = f"EXEC [GetGroupStationData] @Device_Type_No = '{device_no}', @Status = '{INACTIVE}', @CurrentDate = '{Cur_Date}'"
+#Cur_Date='20240823'
+
+def get_data_group(cursor, device_no, Cur_Date):
+    get_group_data = f"EXEC [GetGroupStationData] @DEVICE_TYPE_NO = '{device_no}', @CURRENT_DATE = '{Cur_Date}'"
     cursor.execute(get_group_data)
     group_data = cursor.fetchall()
     return group_data
@@ -38,8 +39,8 @@ def Get_Yield(Yield):
     return Yield
 
 # Define a dictionary to store the data
-def generate_report_daily(cursor, device_no, INACTIVE, Cur_Date):
-    data_INACTIVE = get_data_group(cursor, device_no, INACTIVE, Cur_Date)
+def generate_report_daily(cursor, device_no, Cur_Date):
+    data_INACTIVE = get_data_group(cursor, device_no, Cur_Date)
     if data_INACTIVE == []:
         return 0
     data_dict = {}
@@ -78,7 +79,7 @@ def generate_report_daily(cursor, device_no, INACTIVE, Cur_Date):
     style = XFStyle()
     style.borders = borders
 
-    sheet.write(1, 0, '2277', style)
+    sheet.write(1, 0, '220', style)
     sheet.write(1, 1, device_no, style)
     if keys[0] == 'SUB/L':
         sheet.write(13, 2, yield_limit, style)
@@ -117,10 +118,10 @@ def generate_report_daily(cursor, device_no, INACTIVE, Cur_Date):
     print(f"Exported -> {fileName}")
     return fileName
 
-def generate_data_yield_summary(cursor, device_no, INACTIVE, Cur_Date, cus_no):
+def generate_data_yield_summary(cursor, device_no, Cur_Date, cus_no):
     data_dict = {}
     data_dict_hitter = {}
-    data_INACTIVE = get_data_group(cursor, device_no, INACTIVE, Cur_Date)
+    data_INACTIVE = get_data_group(cursor, device_no, Cur_Date)
     if data_INACTIVE == []:
         return 0
     data_Hitter = get_hitter(cursor, device_no, Cur_Date, cus_no )
@@ -173,8 +174,8 @@ def generate_data_yield_summary(cursor, device_no, INACTIVE, Cur_Date, cus_no):
 def all_data_build(data, device_type):
     if 'QM' not in device_type:
         data_all = {
-        'FOL': {key: "" for key in ['SUB/L', 'SMT1', 'Mold1', 'SMT2']},
-        'EOL': {key: "" for key in ['Mold2', 'SMT3', 'LASER', 'PKG Saw', 'SPUTTER1', 'SPUTTER2', 'DMZ &FVI']},
+        'FOL': {key: "" for key in ['SUB/L', 'SMT1', 'MOLD1', 'SMT2']},
+        'EOL': {key: "" for key in ['MOLD2', 'SMT3', 'LASER', 'PKG Saw', 'SPUTTER1', 'SPUTTER2', 'DMZ &FVI']},
         'TEST': {key: "" for key in ['SLT0', 'SLT1', 'SLT2', 'SLT3', 'AVI/TNR']}
     }
     else:
@@ -217,7 +218,7 @@ def generate_yield_hitter_report(data_all, device_no, Cur_Date, cus_no):
 
     ws.merge_cells('I1:J2')
     second_main_title = ws['I1']
-    second_main_title.value = f"M6 / Z6 / 050 - {cus_no}"
+    second_main_title.value = f"M6 / Z6 / 050 - 220"
     second_main_title.alignment = Alignment(horizontal='left')
     second_main_title.font = Font(bold=True)
 
@@ -315,13 +316,15 @@ def convert_file_to_base64(file_path):
 
 def sending_email(list_attached):
     # toList = ['ATVPE@mkor.onmicosoft.com']
+    # toList = ['Hiep.Letien@amkor.com']
     toList = ['Khuong.Hoangminh@amkor.com']
-    bccList = ['Hiep.Letien@amkor.com']
+    bccList = ['Hiep.Letien@amkor.com','Hoan.Nguyenvan@amkor.com']
+    # bccList = ['Hiep.Letien@amkor.com']
     dictionary_email = {
         "mailPriority": "NORMAL",
         "sender": "summaryyield@amkor.com",
-        "subject": f"{Cur_Date}_ATV_VB11000_DAILY YIELD REPORT-YIELD HITTER SUMMARY REPORT",
-        "body": f"<h1>This is Summary Yield Report on {Cur_Date}</h1>",
+        "subject": f"{Cur_Date}_ATV_VB11000_YIELD DAILY REPORT",
+        "body": f"<h1>Assy Summary Yield Report on {Cur_Date}</h1>",
         "toMailList": toList,
         "ccMailList": [""],
         "bccMailList": bccList,
@@ -334,7 +337,7 @@ def request_API(payload):
     import json
     headers = {'Content-Type': 'application/json'}
     # Send the files to the API
-    response = requests.post("http://10.201.54.56:5067/Common/Send_Email", data=json.dumps(payload), headers=headers)
+    response = requests.post("http://10.201.12.31:8004/Common/Send_Email", data=json.dumps(payload), headers=headers)
     print(response.text)
 
 def main():
@@ -342,15 +345,13 @@ def main():
     cnxn = pyodbc.connect("DRIVER={ODBC Driver 17 for SQL Server};SERVER=10.201.21.84,50150;DATABASE=MCSDB;UID=cimitar2;PWD=TFAtest1!2!")
     cursor = cnxn.cursor()
     device_no_list = ['639-18807', '639-18808', 'QM76300', 'QM76309', 'QM76095']
-    device_no_1 = ['639-18808']
-    INACTIVE = 'INACTIVE'
-    ACTIVE = 'OTHERSTATUS'
+    device_no_1 = ['639-18807']
     cus_no = '2277'
     list_attached = []
     for device_no in device_no_list:
-        report_daily = generate_report_daily(cursor, device_no, INACTIVE, Cur_Date)
+        report_daily = generate_report_daily(cursor, device_no, Cur_Date)
         if report_daily != 0:
-            data = generate_data_yield_summary(cursor, device_no, INACTIVE, Cur_Date, cus_no)
+            data = generate_data_yield_summary(cursor, device_no, Cur_Date, cus_no)
             all_data = all_data_build(data, device_no)
             yield_hitter_report = generate_yield_hitter_report(all_data, device_no, Cur_Date, cus_no)
             base64_report_daily = convert_file_to_base64(report_daily)
@@ -368,10 +369,8 @@ def main():
         else:
             print(f"Cannot generate report because {device_no} has no data on {Cur_Date}")
     cnxn.close()
-    sending_email(list_attached)
+    # sending_email(list_attached)
     
 if __name__ == '__main__':
     main()
-
-
 
