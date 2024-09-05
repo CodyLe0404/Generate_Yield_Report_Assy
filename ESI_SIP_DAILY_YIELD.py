@@ -5,32 +5,84 @@ import pandas as pd
 from xlutils.copy import copy
 from xlwt import Workbook, XFStyle, Borders
 from openpyxl.styles import Border, Side, Alignment, Font
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 import base64
+from bs4 import BeautifulSoup
+import requests
+import os
+import glob
 
-Vietnam_time = pytz.timezone('Asia/Ho_Chi_Minh')
-datetime_str = str(datetime.now(Vietnam_time))
-year = datetime_str.split('-')[0]
-month = datetime_str.split('-')[1]
-date = datetime_str.split('-')[2][:2]
-date = str(int(date) - 1)
+timezone = pytz.timezone('Asia/Ho_Chi_Minh')
+now = datetime.now(timezone)
+yesterday = now - timedelta(days=1)
+yesterday = str(yesterday.date())
+# yesterday = '2024-09-01'
+year = yesterday.split('-')[0]
+month = yesterday.split('-')[1]
+date = yesterday.split('-')[2]
 Cur_Date = year+month+date
 
-#Cur_Date='20240823'
-
 def get_data_group(cursor, device_no, Cur_Date):
-    get_group_data = f"EXEC [GetGroupStationData] @DEVICE_TYPE_NO = '{device_no}', @CURRENT_DATE = '{Cur_Date}'"
+    get_group_data = f"EXEC [GetGroupData_Assy] @DEVICE_TYPE_NO = '{device_no}', @CURRENT_DATE = '{Cur_Date}'"
     cursor.execute(get_group_data)
     group_data = cursor.fetchall()
     return group_data
 
-def get_hitter(cursor, device_no, cur_date, cus_no):
-    get_hitter_date = f"EXEC [Get_Hitter_Assy_SP] @DEVICE_TYPE_NO = '{device_no}', @CURRENT_DATE = '{cur_date}', @CUS_NO = '{cus_no}'"
-    cursor.execute(get_hitter_date)
+def Get_AmkorID_SubID(cursor, DEVICE_TYPE_NO, CUR_DATE):
+    get_hitter_data = f"EXEC [GetHitter_Assy] @DEVICE_TYPE_NO = '{DEVICE_TYPE_NO}', @CUR_DATE = '{CUR_DATE}'"
+    cursor.execute(get_hitter_data)
     hitter_data = cursor.fetchall()
     return hitter_data
 
+def Get_Hitter(cursor, Device, Cur_Date):
+    list_hitter = []
+    hitter_data = Get_AmkorID_SubID(cursor, Device, Cur_Date)
+    Current_Date = f"{year}/{month}/{date}"
+    for row in hitter_data:
+        amkorID = str(row[0])
+        subID = str(row[1])
+        cus_no = str(row[-1])
+
+        url = f'http://aav1ws01/eMES/sch/historyDefect.do?factoryID=80&siteID=1&wipAmkorID={amkorID}&wipAmkorSubID={subID}&pkg=M6&cust={cus_no}'
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        # Find the table by its tag
+        table = soup.find('table')
+
+        # Initialize a list to store the rows
+        table_data = []
+
+        # Iterate over each row in the table
+        for row in table.find_all('tr'):
+            # Get all the cells in the row
+            cells = row.find_all(['td', 'th'])
+            # Extract the text from each cell and store it in a list
+            row_data = [cell.get_text(strip=True) for cell in cells]
+            # Add the row data to the table data list
+            table_data.append(row_data)
+
+        # Print the extracted table data
+        for row in table_data:
+            data = [i for i in row if any(f'{Current_Date}' in cell for cell in row) and len(row) == 5]
+            list_hitter.append(data)
+
+    for i in list_hitter:
+        if i != []:
+            sql_get_group = f"SELECT Group_station FROM [MCSDB].[dbo].[Device_Data_Oper_Assy] WHERE Operation = '{i[1]}' and DeviceName = '{Device}'"
+            cursor.execute(sql_get_group)
+            group_data = cursor.fetchone()
+            group_data = str(group_data)[2:-3]
+            if group_data:
+                i.append(group_data)
+
+    list_hitter = [item for item in list_hitter if len(item) > 0]
+
+    # for i in list_hitter: 
+    #     # print(i)
+    return list_hitter
+        
 def Get_Yield(Yield):
     Yield = str(Yield).split('.')[0] + '.' + str(Yield).split('.')[1][:2] + '%'
     if int(Yield.split('.')[0]) >= 100:
@@ -54,9 +106,11 @@ def generate_report_daily(cursor, device_no, Cur_Date):
     # Load the workbook and select the first sheet and define list of the keys
     if 'QM' not in device_no:   #For ESI
         rb = xlrd.open_workbook(r"C:\Workplace\Task\Support_Assy\Auto_Mail_Yield\sample_format\ESI_SIP_Sample_input.xls", formatting_info=True)
+        # rb = xlrd.open_workbook(r"/home/testit/SRC/Source_2024/Support/ASSY_Generate_Yield_Report/sample_format/ESI_SIP_Sample_input.xls", formatting_info=True)
         keys = ['SUB/L', 'SMT1', 'MOLD1', 'SMT2', 'MOLD2', 'SMT3', 'LASER', 'PKG Saw', 'SPUTTER1', 'SPUTTER2', 'DMZ &FVI', 'SLT0', 'SLT1', 'SLT2', 'SLT3', 'AVI/TNR']
     else:                       #For QORVO
         rb = xlrd.open_workbook(r"C:\Workplace\Task\Support_Assy\Auto_Mail_Yield\sample_format\QORVO_Sample_input.xls", formatting_info=True)
+        # rb = xlrd.open_workbook(r"/home/testit/SRC/Source_2024/Support/ASSY_Generate_Yield_Report/sample_format/QORVO_Sample_input.xls", formatting_info=True)
         keys = ['2DSM', 'TOP SMT', 'TOP MOLD', 'BTM SMT', 'BTM MOLD', 'LASER', 'SMT Reball', 'PKG Saw', 'SPUTTER1', 'DMZ &FVI', 'SLT0', 'SLT1', 'SLT2', 'SLT3', 'AVI/TNR']
 
     #Get Limit Table
@@ -118,13 +172,13 @@ def generate_report_daily(cursor, device_no, Cur_Date):
     print(f"Exported -> {fileName}")
     return fileName
 
-def generate_data_yield_summary(cursor, device_no, Cur_Date, cus_no):
+def generate_data_yield_summary(cursor, device_no, Cur_Date):
     data_dict = {}
     data_dict_hitter = {}
     data_INACTIVE = get_data_group(cursor, device_no, Cur_Date)
     if data_INACTIVE == []:
         return 0
-    data_Hitter = get_hitter(cursor, device_no, Cur_Date, cus_no )
+    
     for index in data_INACTIVE:
         failQty = index[1] - index[2]
         hit_type = index[0]
@@ -135,16 +189,16 @@ def generate_data_yield_summary(cursor, device_no, Cur_Date, cus_no):
         else:
             data_dict[hit_type].append(hitter_info)
 
-    # for index in data_Hitter:
+    data_Hitter = Get_Hitter(cursor, device_no, Cur_Date )
     flag = 0
-    for ele in data_Hitter:
+    for ele in data_Hitter: # for index in data_Hitter:
         station = ele[-1]
         for index in data_INACTIVE:
             if index[0] == station:
                 flag = 1
         if flag != 1:
             continue
-        failDefect = int(ele[-2])
+        failDefect = int(ele[3])
         failStation = int(data_dict[station]['Fail'])
         if failStation == 0:
             rateDefect = '100.00%'
@@ -154,7 +208,7 @@ def generate_data_yield_summary(cursor, device_no, Cur_Date, cus_no):
         dat_hitter = {
             'Hitter' : {
                 'Des' : ele[2],
-                'failQty' : int(ele[-2]),
+                'failQty' : int(ele[3]),
                 'Rate' : rateDefect}}
         if station not in data_dict_hitter:
             data_dict_hitter[station] = []
@@ -195,7 +249,7 @@ def all_data_build(data, device_type):
 
     return data_all
 
-def generate_yield_hitter_report(data_all, device_no, Cur_Date, cus_no):
+def generate_yield_hitter_report(data_all, device_no, Cur_Date):
     # Tạo workbook và active worksheet
     from openpyxl import Workbook
     wb = Workbook()
@@ -316,13 +370,13 @@ def convert_file_to_base64(file_path):
 
 def sending_email(list_attached):
     # toList = ['ATVPE@mkor.onmicosoft.com']
-    # toList = ['Hiep.Letien@amkor.com']
-    toList = ['Khuong.Hoangminh@amkor.com']
-    bccList = ['Hiep.Letien@amkor.com','Hoan.Nguyenvan@amkor.com']
-    # bccList = ['Hiep.Letien@amkor.com']
+    toList = ['Hiep.Letien@amkor.com']
+    # toList = ['Khuong.Hoangminh@amkor.com','thuy.buithibich@amkor.com']
+    # bccList = ['Hiep.Letien@amkor.com','Hoan.Nguyenvan@amkor.com']
+    bccList = ['Hiep.Letien@amkor.com']
     dictionary_email = {
         "mailPriority": "NORMAL",
-        "sender": "summaryyield@amkor.com",
+        "sender": "ATV_DB_Dev@amkor.com",
         "subject": f"{Cur_Date}_ATV_VB11000_YIELD DAILY REPORT",
         "body": f"<h1>Assy Summary Yield Report on {Cur_Date}</h1>",
         "toMailList": toList,
@@ -340,20 +394,27 @@ def request_API(payload):
     response = requests.post("http://10.201.12.31:8004/Common/Send_Email", data=json.dumps(payload), headers=headers)
     print(response.text)
 
+def delete_report_exported():
+    folder_path = r'C:\Workplace\Task\Support_Assy\Auto_Mail_Yield\exported'
+    # folder_path = '/home/testit/SRC/Source_2024/Support/ASSY_Generate_Yield_Report/exported/'
+    excel_files = glob.glob(os.path.join(folder_path, '*.xls'))
+    for file in excel_files:
+        os.remove(file)
+    print(f"Deleted all")
+
 def main():
-    #cnxn = pyodbc.connect("DRIVER=/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-18.3.so.2.1;UID=cimitar2;PWD=TFAtest1!2!;Database=MCSDB;Server=10.201.21.84,50150;TrustServerCertificate=yes;")
-    cnxn = pyodbc.connect("DRIVER={ODBC Driver 17 for SQL Server};SERVER=10.201.21.84,50150;DATABASE=MCSDB;UID=cimitar2;PWD=TFAtest1!2!")
+    #cnxn = pyodbc.connect("DRIVER=/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-18.3.so.2.1;UID=cimitar2;PWD=TFAtest1!2!;Database=ATV_Common;Server=10.201.21.84,50150;TrustServerCertificate=yes;")
+    cnxn = pyodbc.connect("DRIVER={ODBC Driver 17 for SQL Server};SERVER=10.201.21.84,50150;DATABASE=ATV_Common;UID=cimitar2;PWD=TFAtest1!2!")
     cursor = cnxn.cursor()
     device_no_list = ['639-18807', '639-18808', 'QM76300', 'QM76309', 'QM76095']
-    device_no_1 = ['639-18807']
-    cus_no = '2277'
+    device_no_1 = ['QM76095']
     list_attached = []
     for device_no in device_no_list:
         report_daily = generate_report_daily(cursor, device_no, Cur_Date)
         if report_daily != 0:
-            data = generate_data_yield_summary(cursor, device_no, Cur_Date, cus_no)
+            data = generate_data_yield_summary(cursor, device_no, Cur_Date)
             all_data = all_data_build(data, device_no)
-            yield_hitter_report = generate_yield_hitter_report(all_data, device_no, Cur_Date, cus_no)
+            yield_hitter_report = generate_yield_hitter_report(all_data, device_no, Cur_Date)
             base64_report_daily = convert_file_to_base64(report_daily)
             base64_hitter_report = convert_file_to_base64(yield_hitter_report)
             list_attached.append({
@@ -370,7 +431,7 @@ def main():
             print(f"Cannot generate report because {device_no} has no data on {Cur_Date}")
     cnxn.close()
     # sending_email(list_attached)
-    
+    delete_report_exported()
 if __name__ == '__main__':
     main()
 
