@@ -17,7 +17,7 @@ timezone = pytz.timezone('Asia/Ho_Chi_Minh')
 now = datetime.now(timezone)
 yesterday = now - timedelta(days=1)
 yesterday = str(yesterday.date())
-# yesterday = '2024-09-01'
+# yesterday = '2024-09-05'
 year = yesterday.split('-')[0]
 month = yesterday.split('-')[1]
 date = yesterday.split('-')[2]
@@ -42,9 +42,11 @@ def Get_Hitter(cursor, Device, Cur_Date):
     for row in hitter_data:
         amkorID = str(row[0])
         subID = str(row[1])
-        cus_no = str(row[-1])
+        cus_no = str(row[-2])
+        package = str(row[-1])
 
-        url = f'http://aav1ws01/eMES/sch/historyDefect.do?factoryID=80&siteID=1&wipAmkorID={amkorID}&wipAmkorSubID={subID}&pkg=M6&cust={cus_no}'
+        url = f'http://aav1ws01/eMES/sch/historyDefect.do?factoryID=80&siteID=1&wipAmkorID={amkorID}&wipAmkorSubID={subID}&pkg={package}&cust={cus_no}'
+        # url = f'http://10.201.16.21:9080//eMES/sch/historyDefect.do?factoryID=80&siteID=1&wipAmkorID={amkorID}&wipAmkorSubID={subID}&pkg={package}&cust={cus_no}'
         response = requests.get(url)
         soup = BeautifulSoup(response.text, 'html.parser')
 
@@ -190,6 +192,7 @@ def generate_data_yield_summary(cursor, device_no, Cur_Date):
             data_dict[hit_type].append(hitter_info)
 
     data_Hitter = Get_Hitter(cursor, device_no, Cur_Date )
+    print(data_Hitter)
     flag = 0
     for ele in data_Hitter: # for index in data_Hitter:
         station = ele[-1]
@@ -376,7 +379,7 @@ def sending_email(list_attached):
     bccList = ['Hiep.Letien@amkor.com']
     dictionary_email = {
         "mailPriority": "NORMAL",
-        "sender": "ATV_DB_Dev@amkor.com",
+        "sender": "Assy.SummaryYield@amkor.com",
         "subject": f"{Cur_Date}_ATV_VB11000_YIELD DAILY REPORT",
         "body": f"<h1>Assy Summary Yield Report on {Cur_Date}</h1>",
         "toMailList": toList,
@@ -407,7 +410,7 @@ def main():
     cnxn = pyodbc.connect("DRIVER={ODBC Driver 17 for SQL Server};SERVER=10.201.21.84,50150;DATABASE=ATV_Common;UID=cimitar2;PWD=TFAtest1!2!")
     cursor = cnxn.cursor()
     device_no_list = ['639-18807', '639-18808', 'QM76300', 'QM76309', 'QM76095']
-    device_no_1 = ['QM76095']
+    device_no_1 = ['639-18807']
     list_attached = []
     for device_no in device_no_list:
         report_daily = generate_report_daily(cursor, device_no, Cur_Date)
@@ -430,8 +433,9 @@ def main():
         else:
             print(f"Cannot generate report because {device_no} has no data on {Cur_Date}")
     cnxn.close()
-    # sending_email(list_attached)
+    sending_email(list_attached)
     delete_report_exported()
 if __name__ == '__main__':
     main()
+
 
