@@ -17,11 +17,8 @@ timezone = pytz.timezone('Asia/Ho_Chi_Minh')
 now = datetime.now(timezone)
 yesterday = now - timedelta(days=1)
 yesterday = str(yesterday.date())
-# yesterday = '2024-09-05'
-year = yesterday.split('-')[0]
-month = yesterday.split('-')[1]
-date = yesterday.split('-')[2]
-Cur_Date = year+month+date
+yesterday = '2024-08-27'
+Cur_Date = yesterday.replace("-","")
 
 def get_data_group(cursor, device_no, Cur_Date):
     get_group_data = f"EXEC [GetGroupData_Assy] @DEVICE_TYPE_NO = '{device_no}', @CURRENT_DATE = '{Cur_Date}'"
@@ -38,21 +35,15 @@ def Get_AmkorID_SubID(cursor, DEVICE_TYPE_NO, CUR_DATE):
 def Get_Hitter(cursor, Device, Cur_Date):
     list_hitter = []
     hitter_data = Get_AmkorID_SubID(cursor, Device, Cur_Date)
-    Current_Date = f"{year}/{month}/{date}"
+    Current_Date = yesterday.replace('-', '/')
     for row in hitter_data:
-        amkorID = str(row[0])
-        subID = str(row[1])
-        cus_no = str(row[-2])
-        package = str(row[-1])
-
+        amkorID, subID, cus_no, package = map(str, (row[0], row[1], row[-2], row[-1]))
         url = f'http://aav1ws01/eMES/sch/historyDefect.do?factoryID=80&siteID=1&wipAmkorID={amkorID}&wipAmkorSubID={subID}&pkg={package}&cust={cus_no}'
         # url = f'http://10.201.16.21:9080//eMES/sch/historyDefect.do?factoryID=80&siteID=1&wipAmkorID={amkorID}&wipAmkorSubID={subID}&pkg={package}&cust={cus_no}'
         response = requests.get(url)
         soup = BeautifulSoup(response.text, 'html.parser')
-
         # Find the table by its tag
         table = soup.find('table')
-
         # Initialize a list to store the rows
         table_data = []
 
@@ -80,9 +71,6 @@ def Get_Hitter(cursor, Device, Cur_Date):
                 i.append(group_data)
 
     list_hitter = [item for item in list_hitter if len(item) > 0]
-
-    # for i in list_hitter: 
-    #     # print(i)
     return list_hitter
         
 def Get_Yield(Yield):
@@ -98,9 +86,6 @@ def generate_report_daily(cursor, device_no, Cur_Date):
     if data_INACTIVE == []:
         return 0
     data_dict = {}
-    # print("INACTIVE")
-    # for index in data_INACTIVE:
-    #     print(index)
 
     for index in data_INACTIVE:
         data_dict[index[0]] = {'In': index[1], 'Out': index[2], 'Yield': Get_Yield(index[3])}
@@ -192,7 +177,6 @@ def generate_data_yield_summary(cursor, device_no, Cur_Date):
             data_dict[hit_type].append(hitter_info)
 
     data_Hitter = Get_Hitter(cursor, device_no, Cur_Date )
-    print(data_Hitter)
     flag = 0
     for ele in data_Hitter: # for index in data_Hitter:
         station = ele[-1]
@@ -204,7 +188,7 @@ def generate_data_yield_summary(cursor, device_no, Cur_Date):
         failDefect = int(ele[3])
         failStation = int(data_dict[station]['Fail'])
         if failStation == 0:
-            rateDefect = '100.00%'
+            rateDefect = '00.00%'
         else:
             rateDefect = round((failDefect/failStation)*100,2)
             rateDefect = str(rateDefect) + '%'
@@ -215,9 +199,21 @@ def generate_data_yield_summary(cursor, device_no, Cur_Date):
                 'Rate' : rateDefect}}
         if station not in data_dict_hitter:
             data_dict_hitter[station] = []
-        data_dict_hitter[station].append(dat_hitter)
-            
-    # print(data_dict_hitter)
+            data_dict_hitter[station].append(dat_hitter)
+            continue
+        flag = 0
+        len_data_station = len(data_dict_hitter[station])
+        for ind in range(len_data_station):
+            if ele[2] == data_dict_hitter[station][ind]['Hitter']['Des']:
+                failQty_cumulative = data_dict_hitter[station][ind]['Hitter']['failQty'] + int(ele[3])
+                data_dict_hitter[station][ind]['Hitter']['failQty'] = failQty_cumulative
+                rateDefect = round((failQty_cumulative/failStation)*100,2)
+                rateDefect = str(rateDefect) + '%'
+                data_dict_hitter[station][ind]['Hitter']['Rate'] = rateDefect
+                flag=1
+        if flag != 1:
+            data_dict_hitter[station].append(dat_hitter)
+
     if 'QM' not in device_no:
         stations = ['SUB/L','SMT1', 'Mold1', 'SMT2','Mold2', 'SMT3', 'LASER', 'PKG Saw', 'SPUTTER1', 'SPUTTER2', 'DMZ &FVI', 'SLT0', 'SLT1', 'SLT2', 'SLT3', 'AVI/TNR']
     else:
@@ -234,13 +230,13 @@ def all_data_build(data, device_type):
         'FOL': {key: "" for key in ['SUB/L', 'SMT1', 'MOLD1', 'SMT2']},
         'EOL': {key: "" for key in ['MOLD2', 'SMT3', 'LASER', 'PKG Saw', 'SPUTTER1', 'SPUTTER2', 'DMZ &FVI']},
         'TEST': {key: "" for key in ['SLT0', 'SLT1', 'SLT2', 'SLT3', 'AVI/TNR']}
-    }
+        }
     else:
         data_all = {
         'FOL': {key: "" for key in ['2DSM', 'TOP SMT', 'TOP MOLD', 'BTM SMT']},
         'EOL': {key: "" for key in ['BTM MOLD', 'LASER', 'SMT Reball', 'PKG Saw', 'SPUTTER1', 'DMZ &FVI']},
         'TEST': {key: "" for key in ['SLT0', 'SLT1', 'SLT2', 'SLT3', 'AVI/TNR']}
-    }
+        }
 
     for key in data:
         if key in data_all['FOL']:
@@ -257,7 +253,6 @@ def generate_yield_hitter_report(data_all, device_no, Cur_Date):
     from openpyxl import Workbook
     wb = Workbook()
     ws = wb.active
-
     thin_border = Border(left=Side(style='thin'), 
                         right=Side(style='thin'), 
                         top=Side(style='thin'), 
@@ -410,7 +405,7 @@ def main():
     cnxn = pyodbc.connect("DRIVER={ODBC Driver 17 for SQL Server};SERVER=10.201.21.84,50150;DATABASE=ATV_Common;UID=cimitar2;PWD=TFAtest1!2!")
     cursor = cnxn.cursor()
     device_no_list = ['639-18807', '639-18808', 'QM76300', 'QM76309', 'QM76095']
-    device_no_1 = ['639-18807']
+    device_no_1 = ['QM76309']
     list_attached = []
     for device_no in device_no_list:
         report_daily = generate_report_daily(cursor, device_no, Cur_Date)
@@ -437,5 +432,4 @@ def main():
     delete_report_exported()
 if __name__ == '__main__':
     main()
-
 
