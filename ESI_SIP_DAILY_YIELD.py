@@ -17,11 +17,16 @@ timezone = pytz.timezone('Asia/Ho_Chi_Minh')
 now = datetime.now(timezone)
 yesterday = now - timedelta(days=1)
 yesterday = str(yesterday.date())
-yesterday = '2024-08-27'
+today = str(now.date())
+# yesterday = '2024-09-19'
+# today = '2024-09-20'
 Cur_Date = yesterday.replace("-","")
 
-def get_data_group(cursor, device_no, Cur_Date):
-    get_group_data = f"EXEC [GetGroupData_Assy] @DEVICE_TYPE_NO = '{device_no}', @CURRENT_DATE = '{Cur_Date}'"
+
+def get_data_group(cursor, device_no, Cur_Date, today):
+    from_date = f'{Cur_Date}060000'
+    to_date = f'{today.replace('-','')}055959'
+    get_group_data = f"EXEC [GetGroupData_Assy] @DEVICE_TYPE_NO = '{device_no}', @FROM_DATE = '{from_date}', @TO_DATE = '{to_date}'"
     cursor.execute(get_group_data)
     group_data = cursor.fetchall()
     return group_data
@@ -32,10 +37,21 @@ def Get_AmkorID_SubID(cursor, DEVICE_TYPE_NO, CUR_DATE):
     hitter_data = cursor.fetchall()
     return hitter_data
 
-def Get_Hitter(cursor, Device, Cur_Date):
+def data_24hrs_at_6am(list_hitter: list, yesterday: str, today: str): #Get data within 24 hours at 6 am every day
+    # Define the start and end datetime range
+    yesterday = yesterday.replace('-','/')
+    today = today.replace('-','/')
+    start_datetime = datetime.strptime(f'{yesterday} 06:00:00', '%Y/%m/%d %H:%M:%S')
+    end_datetime = datetime.strptime(f'{today} 05:59:59', '%Y/%m/%d %H:%M:%S')
+
+    # Filter the list based on the datetime range
+    filtered_list = [desc for desc in list_hitter if start_datetime <= datetime.strptime(desc[4], '%Y/%m/%d %H:%M:%S') <= end_datetime]
+    return filtered_list
+
+def Get_Hitter(cursor, Device, Cur_Date, yesterday, today):
     list_hitter = []
     hitter_data = Get_AmkorID_SubID(cursor, Device, Cur_Date)
-    Current_Date = yesterday.replace('-', '/')
+    Current_Date = yesterday.replace('-', '/')[:-1] 
     for row in hitter_data:
         amkorID, subID, cus_no, package = map(str, (row[0], row[1], row[-2], row[-1]))
         url = f'http://aav1ws01/eMES/sch/historyDefect.do?factoryID=80&siteID=1&wipAmkorID={amkorID}&wipAmkorSubID={subID}&pkg={package}&cust={cus_no}'
@@ -71,7 +87,9 @@ def Get_Hitter(cursor, Device, Cur_Date):
                 i.append(group_data)
 
     list_hitter = [item for item in list_hitter if len(item) > 0]
-    return list_hitter
+    list_hitter_filtered = data_24hrs_at_6am(list_hitter, yesterday, today)
+
+    return list_hitter_filtered
         
 def Get_Yield(Yield):
     Yield = str(Yield).split('.')[0] + '.' + str(Yield).split('.')[1][:2] + '%'
@@ -81,8 +99,8 @@ def Get_Yield(Yield):
     return Yield
 
 # Define a dictionary to store the data
-def generate_report_daily(cursor, device_no, Cur_Date):
-    data_INACTIVE = get_data_group(cursor, device_no, Cur_Date)
+def generate_report_daily(cursor, device_no, Cur_Date, today):
+    data_INACTIVE = get_data_group(cursor, device_no, Cur_Date, today)
     if data_INACTIVE == []:
         return 0
     data_dict = {}
@@ -159,10 +177,10 @@ def generate_report_daily(cursor, device_no, Cur_Date):
     print(f"Exported -> {fileName}")
     return fileName
 
-def generate_data_yield_summary(cursor, device_no, Cur_Date):
+def generate_data_yield_summary(cursor, device_no, Cur_Date, yesterday, today):
     data_dict = {}
     data_dict_hitter = {}
-    data_INACTIVE = get_data_group(cursor, device_no, Cur_Date)
+    data_INACTIVE = get_data_group(cursor, device_no, Cur_Date, today)
     if data_INACTIVE == []:
         return 0
     
@@ -176,7 +194,7 @@ def generate_data_yield_summary(cursor, device_no, Cur_Date):
         else:
             data_dict[hit_type].append(hitter_info)
 
-    data_Hitter = Get_Hitter(cursor, device_no, Cur_Date )
+    data_Hitter = Get_Hitter(cursor, device_no, Cur_Date, yesterday, today)
     flag = 0
     for ele in data_Hitter: # for index in data_Hitter:
         station = ele[-1]
@@ -307,13 +325,16 @@ def generate_yield_hitter_report(data_all, device_no, Cur_Date):
 
     # Initialize current_row
     current_row = 7
-
     for group, stations in data_all.items():
         group_start_row = current_row
         ws.cell(row=current_row, column=1, value=group)
+        cell = ws.cell(row=current_row, column=1)
+        cell.alignment = Alignment(horizontal='center', vertical='center')
         for station, data in stations.items():
             station_start_row = current_row
             ws.cell(row=current_row, column=2, value=station)
+            cell = ws.cell(row=current_row, column=2)
+            cell.alignment = Alignment(vertical='center')
             if data == "":
                 ws.cell(row=current_row, column=3, value=0)
                 ws.cell(row=current_row, column=4, value=0)
@@ -408,9 +429,9 @@ def main():
     device_no_1 = ['QM76309']
     list_attached = []
     for device_no in device_no_list:
-        report_daily = generate_report_daily(cursor, device_no, Cur_Date)
+        report_daily = generate_report_daily(cursor, device_no, Cur_Date, today)
         if report_daily != 0:
-            data = generate_data_yield_summary(cursor, device_no, Cur_Date)
+            data = generate_data_yield_summary(cursor, device_no, Cur_Date, yesterday, today)
             all_data = all_data_build(data, device_no)
             yield_hitter_report = generate_yield_hitter_report(all_data, device_no, Cur_Date)
             base64_report_daily = convert_file_to_base64(report_daily)
