@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 import requests
 import os
 import glob
+import configparser
 
 timezone = pytz.timezone('Asia/Ho_Chi_Minh')
 now = datetime.now(timezone)
@@ -21,7 +22,6 @@ today = str(now.date())
 # yesterday = '2024-09-19'
 # today = '2024-09-20'
 Cur_Date = yesterday.replace("-","")
-
 
 def get_data_group(cursor, device_no, Cur_Date, today):
     from_date = f'{Cur_Date}060000'
@@ -54,8 +54,8 @@ def Get_Hitter(cursor, Device, Cur_Date, yesterday, today):
     Current_Date = yesterday.replace('-', '/')[:-1] 
     for row in hitter_data:
         amkorID, subID, cus_no, package = map(str, (row[0], row[1], row[-2], row[-1]))
-        url = f'http://aav1ws01/eMES/sch/historyDefect.do?factoryID=80&siteID=1&wipAmkorID={amkorID}&wipAmkorSubID={subID}&pkg={package}&cust={cus_no}'
-        # url = f'http://10.201.16.21:9080//eMES/sch/historyDefect.do?factoryID=80&siteID=1&wipAmkorID={amkorID}&wipAmkorSubID={subID}&pkg={package}&cust={cus_no}'
+        try: url = f'http://aav1ws01/eMES/sch/historyDefect.do?factoryID=80&siteID=1&wipAmkorID={amkorID}&wipAmkorSubID={subID}&pkg={package}&cust={cus_no}' #window
+        except: url = f'http://10.201.16.21:9080//eMES/sch/historyDefect.do?factoryID=80&siteID=1&wipAmkorID={amkorID}&wipAmkorSubID={subID}&pkg={package}&cust={cus_no}' #linux
         response = requests.get(url)
         soup = BeautifulSoup(response.text, 'html.parser')
         # Find the table by its tag
@@ -110,13 +110,13 @@ def generate_report_daily(cursor, device_no, Cur_Date, today):
 
     # Load the workbook and select the first sheet and define list of the keys
     if 'QM' not in device_no:   #For ESI
-        rb = xlrd.open_workbook(r"C:\Workplace\Task\Support_Assy\Auto_Mail_Yield\sample_format\ESI_SIP_Sample_input.xls", formatting_info=True)
-        # rb = xlrd.open_workbook(r"/home/testit/SRC/Source_2024/Support/ASSY_Generate_Yield_Report/sample_format/ESI_SIP_Sample_input.xls", formatting_info=True)
+        rb = xlrd.open_workbook(r"C:\Workplace\Task\Support_Assy\Auto_Mail_Yield\sample_format\ESI_SIP_Sample_input.xls", formatting_info=True) #window
+        # rb = xlrd.open_workbook(r"/home/testit/SRC/Source_2024/Support/ASSY_Generate_Yield_Report/sample_format/ESI_SIP_Sample_input.xls", formatting_info=True) #linux
         keys = ['SUB/L', 'SMT1', 'MOLD1', 'SMT2', 'MOLD2', 'SMT3', 'LASER', 'PKG Saw', 'SPUTTER1', 'SPUTTER2', 'DMZ &FVI', 'SLT0', 'SLT1', 'SLT2', 'SLT3', 'AVI/TNR']
     else:                       #For QORVO
         rb = xlrd.open_workbook(r"C:\Workplace\Task\Support_Assy\Auto_Mail_Yield\sample_format\QORVO_Sample_input.xls", formatting_info=True)
-        # rb = xlrd.open_workbook(r"/home/testit/SRC/Source_2024/Support/ASSY_Generate_Yield_Report/sample_format/QORVO_Sample_input.xls", formatting_info=True)
-        keys = ['2DSM', 'TOP SMT', 'TOP MOLD', 'BTM SMT', 'BTM MOLD', 'LASER', 'SMT Reball', 'PKG Saw', 'SPUTTER1', 'DMZ &FVI', 'SLT0', 'SLT1', 'SLT2', 'SLT3', 'AVI/TNR']
+        # rb = xlrd.open_workbook(r"/home/testit/SRC/Source_2024/Support/ASSY_Generate_Yield_Report/sample_format/QORVO_Sample_input.xls", formatting_info=True) #window
+        keys = ['2DSM', 'TOP SMT', 'TOP MOLD', 'BTM SMT', 'BTM MOLD', 'LASER', 'SMT Reball', 'PKG Saw', 'SPUTTER1', 'DMZ &FVI', 'SLT0', 'SLT1', 'SLT2', 'SLT3', 'AVI/TNR'] #linux
 
     #Get Limit Table
     sql_get_YLTB = f""" SELECT * FROM OPENQUERY([DATA400], 'SELECT YLYLIM FROM EMLIB.EMESTP04 
@@ -376,7 +376,8 @@ def generate_yield_hitter_report(data_all, device_no, Cur_Date):
 
     # Save the workbook
     fileName = f"{device_no}_{Cur_Date}_Yield_Hitter_Summary.xls"
-    fileFolder = 'exported'
+    # fileFolder = '/home/testit/SRC/Source_2024/Support/ASSY_Generate_Yield_Report/exported'    #linux
+    fileFolder = 'exported'                     #window
     wb.save(f"{fileFolder}/{fileName}")
     print(f"Exported -> {fileName}")
     return fileName
@@ -388,7 +389,7 @@ def convert_file_to_base64(file_path):
     return encoded_string.decode('utf-8')
 
 def sending_email(list_attached):
-    # toList = ['ATVPE@mkor.onmicosoft.com']
+    # toList = ['ATVPE@amkor.onmicrosoft.com']
     toList = ['Hiep.Letien@amkor.com']
     # toList = ['Khuong.Hoangminh@amkor.com','thuy.buithibich@amkor.com']
     # bccList = ['Hiep.Letien@amkor.com','Hoan.Nguyenvan@amkor.com']
@@ -414,17 +415,46 @@ def request_API(payload):
     print(response.text)
 
 def delete_report_exported():
-    folder_path = r'C:\Workplace\Task\Support_Assy\Auto_Mail_Yield\exported'
-    # folder_path = '/home/testit/SRC/Source_2024/Support/ASSY_Generate_Yield_Report/exported/'
+    folder_path = r'C:\Workplace\Task\Support_Assy\Auto_Mail_Yield\exported'    #window
+    # folder_path = '/home/testit/SRC/Source_2024/Support/ASSY_Generate_Yield_Report/exported/'     #linux
     excel_files = glob.glob(os.path.join(folder_path, '*.xls'))
     for file in excel_files:
         os.remove(file)
     print(f"Deleted all")
 
-def main():
+def connect_database_window(host, port, user, password, database): #DRIVER={ODBC Driver 17 for SQL Server};SERVER=10.201.21.84,50150;DATABASE=ATV_Common;UID=cimitar2;PWD=TFAtest1!2!
+    connectionStr = "DRIVER={ODBC Driver 17 for SQL Server}" 
+    connectionStr += ";SERVER=" + host + "," + port 
+    connectionStr +=  ";DATABASE=" + database 
+    connectionStr += ";UID=" + user 
+    connectionStr += ";PWD=" + password 
+    return connectionStr
+
+def connect_data_linux(host, port, user, password, database):
     #cnxn = pyodbc.connect("DRIVER=/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-18.3.so.2.1;UID=cimitar2;PWD=TFAtest1!2!;Database=ATV_Common;Server=10.201.21.84,50150;TrustServerCertificate=yes;")
-    cnxn = pyodbc.connect("DRIVER={ODBC Driver 17 for SQL Server};SERVER=10.201.21.84,50150;DATABASE=ATV_Common;UID=cimitar2;PWD=TFAtest1!2!")
+    connectionStr = "DRIVER=/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-18.3.so.2.1" 
+    connectionStr += ";UID=" + user
+    connectionStr += ";PWD=" + password
+    connectionStr +=  ";DATABASE=" + database 
+    connectionStr += ";SERVER=" + host + "," + port 
+    connectionStr += ";TrustServerCertificate=yes;"
+    return connectionStr
+
+def main():
+    config = configparser.ConfigParser()
+    config.read('config.ini')
+    db_config = config['Database']
+    host = db_config['Server']
+    port = db_config['Port']
+    user = db_config['User']
+    password = db_config['Password']
+    database = db_config['Database']
+
+    connectionStr = connect_database_window(host, port, user, password, database)   #window
+    # connectionStr = connect_data_linux(host, port, user, password, database)      #linux
+    cnxn = pyodbc.connect(connectionStr)
     cursor = cnxn.cursor()
+
     device_no_list = ['639-18807', '639-18808', 'QM76300', 'QM76309', 'QM76095']
     device_no_1 = ['QM76309']
     list_attached = []
