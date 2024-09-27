@@ -98,6 +98,14 @@ def Get_Yield(Yield):
         return Yield
     return Yield
 
+def get_yield_target(cursor):
+    sql_get_YLTB = f""" SELECT * FROM OPENQUERY([DATA400], 'SELECT YLYLIM FROM EMLIB.EMESTP04 
+                WHERE YLPKG = ''M6'' AND YLDMS = ''Z6'' AND YLLEAD = ''050'' AND YLBUSN = ''A'' ')"""
+    cursor.execute(sql_get_YLTB)
+    data_ylmit = cursor.fetchone()
+    yield_limit = str(data_ylmit[0])[:5] + '%'
+    return yield_limit
+
 # Define a dictionary to store the data
 def generate_report_daily(cursor, device_no, Cur_Date, today):
     data_INACTIVE = get_data_group(cursor, device_no, Cur_Date, today)
@@ -119,12 +127,7 @@ def generate_report_daily(cursor, device_no, Cur_Date, today):
         keys = ['2DSM', 'TOP SMT', 'TOP MOLD', 'BTM SMT', 'BTM MOLD', 'LASER', 'SMT Reball', 'PKG Saw', 'SPUTTER1', 'DMZ &FVI', 'SLT0', 'SLT1', 'SLT2', 'SLT3', 'AVI/TNR'] #linux
 
     #Get Limit Table
-    sql_get_YLTB = f""" SELECT * FROM OPENQUERY([DATA400], 'SELECT YLYLIM FROM EMLIB.EMESTP04 
-                WHERE YLPKG = ''M6'' AND YLDMS = ''Z6'' AND YLLEAD = ''050'' AND YLBUSN = ''A'' ')"""
-    cursor.execute(sql_get_YLTB)
-    data_ylmit = cursor.fetchone()
-    yield_limit = str(data_ylmit[0])[:5] + '%'
-
+    yield_limit = get_yield_target(cursor)
     #WorkBook
     wb = copy(rb)
     sheet = wb.get_sheet(0)
@@ -482,8 +485,8 @@ def main():
         else:
             print(f"Cannot generate report because {device_no} has no data on {Cur_Date}")
     cnxn.close()
-    sending_email(list_attached)
-    delete_report_exported()
+    # sending_email(list_attached)
+    # delete_report_exported()
 if __name__ == '__main__':
     main()
 
