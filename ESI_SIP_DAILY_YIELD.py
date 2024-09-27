@@ -171,7 +171,8 @@ def generate_report_daily(cursor, device_no, Cur_Date, today):
     sheet.write(len(keys) + 4, 5, Overall_In, style)
     sheet.write(len(keys) + 4, 6, Overall_Out, style)
     fileName = f'{device_no}_{Cur_Date}_IO_DAILY_YIELD.xls'
-    fileFolder = 'exported'
+    fileFolder = 'exported'     #window
+    # fileFolder = '/home/testit/SRC/Source_2024/Support/ASSY_Generate_Yield_Report/exported'  #linux
     # Save the workbook
     wb.save(f'{fileFolder}/{fileName}')
     print(f"Exported -> {fileName}")
@@ -382,8 +383,9 @@ def generate_yield_hitter_report(data_all, device_no, Cur_Date):
     print(f"Exported -> {fileName}")
     return fileName
 
-def convert_file_to_base64(file_path):
-    file_path = f"exported/{file_path}"
+def convert_file_to_base64(filename):
+    file_path = f"exported/{filename}"      #window
+    # file_path = f'/home/testit/SRC/Source_2024/Support/ASSY_Generate_Yield_Report/exported/{filename}'    #linux
     with open(file_path, "rb") as file:
         encoded_string = base64.b64encode(file.read())
     return encoded_string.decode('utf-8')
@@ -442,7 +444,8 @@ def connect_data_linux(host, port, user, password, database):
 
 def main():
     config = configparser.ConfigParser()
-    config.read('config.ini')
+    config.read('config.ini')   #window
+    # config.read('/home/testit/SRC/Source_2024/Support/ASSY_Generate_Yield_Report/config.ini')       #linux
     db_config = config['Database']
     host = db_config['Server']
     port = db_config['Port']
