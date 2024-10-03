@@ -99,12 +99,90 @@ def Get_Yield(Yield):
     return Yield
 
 def get_yield_target(cursor):
-    sql_get_YLTB = f""" SELECT * FROM OPENQUERY([DATA400], 'SELECT YLYLIM FROM EMLIB.EMESTP04 
+    sql_get_YLTB = f"""SELECT * FROM OPENQUERY([DATA400], 'SELECT YLYLIM FROM EMLIB.EMESTP04 
                 WHERE YLPKG = ''M6'' AND YLDMS = ''Z6'' AND YLLEAD = ''050'' AND YLBUSN = ''A'' ')"""
     cursor.execute(sql_get_YLTB)
     data_ylmit = cursor.fetchone()
     yield_limit = str(data_ylmit[0])[:5] + '%'
     return yield_limit
+
+def station_tartget_yield_monaco(cursor, Device):
+    sql_get_yield_target = f"""SELECT YLYLIM, Group_station FROM OPENQUERY([DATA400], 'SELECT YLOPR#, YLYLIM FROM EMLIB.EMESTP04
+        WHERE YLPKG = ''M6'' AND YLDMS = ''Z6'' AND YLLEAD = ''050'' AND YLBUSN = ''A'' ') AS YLTB
+    INNER JOIN (
+        SELECT OP_Code, Operation, Group_station FROM [MCSDB].[dbo].[Device_Data_Oper_Assy] WHERE DeviceName = '{Device}') AS DVTB
+        ON YLTB.YLOPR# = DVTB.OP_Code"""
+    cursor.execute(sql_get_yield_target)
+    station_yield_target_monaco = cursor.fetchall()
+    return station_yield_target_monaco
+
+def station_tartget_yield_qorvo(cursor, Device):
+    sql_get_yield_target = f"""SELECT YLYLIM, Group_station FROM OPENQUERY([DATA400], 
+        'SELECT YLOPR#, YLYLIM FROM EMLIB.EMESTP04 WHERE YLCSCD = 948') AS YLTB
+    INNER JOIN (
+        SELECT OP_Code, Operation, Group_station FROM [MCSDB].[dbo].[Device_Data_Oper_Assy] WHERE DeviceName = '{Device}') AS DVTB
+        ON YLTB.YLOPR# = DVTB.OP_Code"""
+    cursor.execute(sql_get_yield_target)
+    station_yield_target_qorvo = cursor.fetchall()
+    return station_yield_target_qorvo
+
+def write_yield_target_monaco(station, target_yield, sheet, style):
+    if station == 'SUB/L':
+        sheet.write(3, 2, target_yield, style)
+    elif station == 'SMT1':
+        sheet.write(4, 2, target_yield, style)
+    elif station == 'MOLD1':
+        sheet.write(5, 2, target_yield, style)
+    elif station == 'SMT2':
+        sheet.write(6, 2, target_yield, style)
+    elif station == 'MOLD2':
+        sheet.write(7, 2, target_yield, style)
+    elif station == 'SMT3':
+        sheet.write(8, 2, target_yield, style)
+    elif station == 'LASER':
+        sheet.write(9, 2, target_yield, style)
+    elif station == 'PKG Saw':
+        sheet.write(10, 2, target_yield, style)
+    elif station == 'SPUTTER1':
+        sheet.write(11, 2, target_yield, style)
+    elif station == 'SPUTTER2':
+        sheet.write(12, 2, target_yield, style)
+    elif station == 'DMZ &FVI':
+        sheet.write(13, 2, target_yield, style)
+    return sheet
+
+def write_yield_target_qorvo(station, target_yield, sheet, style):
+    if station == '2DSM':
+        sheet.write(3, 2, target_yield, style)
+    elif station == 'TOP SMT':
+        sheet.write(4, 2, target_yield, style)
+    elif station == 'TOP MOLD':
+        sheet.write(5, 2, target_yield, style)
+    elif station == 'BTM SMT':
+        sheet.write(6, 2, target_yield, style)
+    elif station == 'BTM MOLD':
+        sheet.write(7, 2, target_yield, style)
+    elif station == 'LASER':
+        sheet.write(8, 2, target_yield, style)
+    elif station == 'SMT Reball':
+        sheet.write(9, 2, target_yield, style)
+    elif station == 'PKG Saw':
+        sheet.write(10, 2, target_yield, style)
+    elif station == 'SPUTTER1':
+        sheet.write(11, 2, target_yield, style)
+    elif station == 'DMZ &FVI':
+        sheet.write(12, 2, target_yield, style)
+    return sheet
+
+def write_yield_target(station_yield_target, device ,sheet,style):
+    for group in station_yield_target:
+        station = group[1]
+        target_yield = str(group[0])[:5]
+        if device == '639-18808' or device == '639-18807':
+            sheet = write_yield_target_monaco(station, target_yield, sheet, style)
+        else:
+            sheet = write_yield_target_qorvo(station, target_yield, sheet, style)
+    return sheet
 
 # Define a dictionary to store the data
 def generate_report_daily(cursor, device_no, Cur_Date, today):
@@ -126,8 +204,6 @@ def generate_report_daily(cursor, device_no, Cur_Date, today):
         # rb = xlrd.open_workbook(r"/home/testit/SRC/Source_2024/Support/ASSY_Generate_Yield_Report/sample_format/QORVO_Sample_input.xls", formatting_info=True) #window
         keys = ['2DSM', 'TOP SMT', 'TOP MOLD', 'BTM SMT', 'BTM MOLD', 'LASER', 'SMT Reball', 'PKG Saw', 'SPUTTER1', 'DMZ &FVI', 'SLT0', 'SLT1', 'SLT2', 'SLT3', 'AVI/TNR'] #linux
 
-    #Get Limit Table
-    yield_limit = get_yield_target(cursor)
     #WorkBook
     wb = copy(rb)
     sheet = wb.get_sheet(0)
@@ -141,12 +217,21 @@ def generate_report_daily(cursor, device_no, Cur_Date, today):
     style = XFStyle()
     style.borders = borders
 
-    sheet.write(1, 0, '220', style)
-    sheet.write(1, 1, device_no, style)
-    if keys[0] == 'SUB/L':
-        sheet.write(13, 2, yield_limit, style)
+    #Target Yield Limit Table
+    if device_no == '639-18808' or device_no == '639-18807':
+        sheet.write(1, 0, '220', style)
+        sheet.write(1, 1, device_no, style)
+        station_yield_target = station_tartget_yield_monaco(cursor, device_no)
     else:
-        sheet.write(12, 2, yield_limit, style)
+        if device_no == 'QM76300' or device_no == 'QM76309':
+            sheet.write(0, 2, 'M6/ZB/048', style)
+        else:
+            sheet.write(0, 2, 'M6/Z4/096', style)
+        sheet.write(1, 0, '948', style)
+        sheet.write(1, 1, device_no, style)
+        station_yield_target = station_tartget_yield_qorvo(cursor, device_no)
+
+    sheet = write_yield_target(station_yield_target, device_no, sheet, style)
     
     # Initialize the overall In and Out
     Overall_In = 0
@@ -427,7 +512,8 @@ def delete_report_exported():
         os.remove(file)
     print(f"Deleted all")
 
-def connect_database_window(host, port, user, password, database): #DRIVER={ODBC Driver 17 for SQL Server};SERVER=10.201.21.84,50150;DATABASE=ATV_Common;UID=cimitar2;PWD=TFAtest1!2!
+#"DRIVER={ODBC Driver 17 for SQL Server};SERVER=host,port;DATABASE=database;UID=user;PWD=password"
+def connect_database_window(host, port, user, password, database): 
     connectionStr = "DRIVER={ODBC Driver 17 for SQL Server}" 
     connectionStr += ";SERVER=" + host + "," + port 
     connectionStr +=  ";DATABASE=" + database 
@@ -435,8 +521,8 @@ def connect_database_window(host, port, user, password, database): #DRIVER={ODBC
     connectionStr += ";PWD=" + password 
     return connectionStr
 
+#"DRIVER=/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-18.3.so.2.1;UID=user;PWD=password;Database=database;Server=host,port;TrustServerCertificate=yes;"
 def connect_data_linux(host, port, user, password, database):
-    #cnxn = pyodbc.connect("DRIVER=/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-18.3.so.2.1;UID=cimitar2;PWD=TFAtest1!2!;Database=ATV_Common;Server=10.201.21.84,50150;TrustServerCertificate=yes;")
     connectionStr = "DRIVER=/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-18.3.so.2.1" 
     connectionStr += ";UID=" + user
     connectionStr += ";PWD=" + password
@@ -462,7 +548,7 @@ def main():
     cursor = cnxn.cursor()
 
     device_no_list = ['639-18807', '639-18808', 'QM76300', 'QM76309', 'QM76095']
-    device_no_1 = ['QM76309']
+    device_no_1 = ['QM76095']
     list_attached = []
     for device_no in device_no_list:
         report_daily = generate_report_daily(cursor, device_no, Cur_Date, today)
@@ -484,6 +570,7 @@ def main():
             })
         else:
             print(f"Cannot generate report because {device_no} has no data on {Cur_Date}")
+
     cnxn.close()
     # sending_email(list_attached)
     # delete_report_exported()
